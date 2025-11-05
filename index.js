@@ -37,6 +37,24 @@ io.on('connection', (socket) => {
     // make available sets discoverable to clients (host will use)
     socket.emit('server:questionSets', availableSets, defaultSet);
 
+    // PLAYER joins a room
+    socket.on('player:join', (roomCode, playerName) => {
+        const room = rooms[roomCode];
+        if (!room) {
+            socket.emit('server:error', 'Room not found');
+            return;
+        }
+        // add player to room state
+        room.players[socket.id] = { name: playerName, score: 0 };
+        socket.join(roomCode);
+        // ack to player
+        socket.emit('server:joined', roomCode);
+        // broadcast updated players list to everyone in the room
+        const playersList = Object.values(room.players).map(p => ({ name: p.name, score: p.score }));
+        io.to(roomCode).emit('server:updatePlayers', playersList);
+        console.log(`Player joined: ${playerName} -> room ${roomCode}`);
+    });
+
     // HOST creates a new room
     socket.on('host:create', () => {
         const roomCode = Math.floor(1000 + Math.random() * 9000).toString();
@@ -133,6 +151,13 @@ function endQuestionAndJudge(roomCode) {
 
     room.gameState.isQuestionActive = false;
     const questionIndex = room.gameState.currentQuestionIndex;
+
+    // Use the room's selected content, or the default set
+    const content = room.gameState.content || defaultContent;
+    if (!content || !content.questions || !content.questions[questionIndex]) {
+        io.to(room.hostId).emit('server:error', 'No question data available for judging.');
+        return;
+    }
     const correctAnswer = content.questions[questionIndex].answer;
     
     let closestPlayerId = null;
@@ -141,6 +166,7 @@ function endQuestionAndJudge(roomCode) {
     // Find the closest player
     for (const playerId in room.gameState.answers) {
         const playerAnswer = parseInt(room.gameState.answers[playerId], 10);
+        if (Number.isNaN(playerAnswer)) continue;
         const difference = Math.abs(playerAnswer - correctAnswer);
 
         if (difference < minDifference) {
@@ -150,7 +176,7 @@ function endQuestionAndJudge(roomCode) {
     }
 
     // Award point if someone answered
-    if (closestPlayerId) {
+    if (closestPlayerId && room.players[closestPlayerId]) {
         room.players[closestPlayerId].score++;
     }
 
@@ -171,4 +197,3 @@ function endQuestionAndJudge(roomCode) {
 server.listen(3000, () => {
     console.log('listening on *:3000');
 });
-
