@@ -7,6 +7,8 @@
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; text-align: center; background: #1a1a1a; color: #f0f0f0; margin: 0; padding: 10px; }
         .screen { display: none; }
         .screen.active { display: block; }
+        /* used by JS to hide subviews */
+        .hidden { display: none !important; }
         .container { max-width: 600px; margin: auto; padding: 20px; background: #2a2a2a; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
         button { font-size: 1.2rem; padding: 12px 24px; border-radius: 8px; border: none; cursor: pointer; background: #007bff; color: white; margin: 5px; transition: background-color 0.2s; }
         button:hover { background: #0056b3; }
@@ -45,6 +47,12 @@
         <div class="container">
             <h1>Host Dashboard</h1>
             <h2>Room Code: <span id="room-code"></span></h2>
+
+            <label for="question-set-select">Question set</label>
+            <select id="question-set-select" style="width:100%;padding:8px;border-radius:6px;margin-bottom:10px;">
+                <option value="">(loading...)</option>
+            </select>
+            
             <button id="next-question-button">Start Next Question</button>
             
             <div id="host-results-view">
@@ -91,6 +99,9 @@
         // --- State Variables ---
         let myRoomCode = '';
         let timerInterval;
+
+        // --- Host UI elements ---
+        const questionSetSelect = document.getElementById('question-set-select');
 
         // --- Screen Elements ---
         const screens = document.querySelectorAll('.screen');
@@ -155,9 +166,21 @@
             });
         });
 
+        // Disable submit until a question starts
+        submitButton.disabled = true;
+
+        // host selects set -> tell server
+        questionSetSelect.addEventListener('change', () => {
+            const filename = questionSetSelect.value;
+            if (!myRoomCode) return;
+            socket.emit('host:selectSet', myRoomCode, filename);
+        });
+
         // Separate submit button
         submitButton.addEventListener('click', () => {
             if (answerDisplay.textContent) {
+                // disable submit immediately to lock out player
+                submitButton.disabled = true;
                 playerQuestionView.classList.add('hidden');
                 playerWaitingView.classList.remove('hidden');
                 socket.emit('player:submitAnswer', myRoomCode, answerDisplay.textContent);
@@ -172,9 +195,22 @@
             showScreen('host-dashboard');
         });
 
+        // Populate host question set dropdown
+        socket.on('server:questionSets', (sets, defaultSet) => {
+            questionSetSelect.innerHTML = '';
+            sets.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s;
+                opt.textContent = s;
+                questionSetSelect.appendChild(opt);
+            });
+            if (defaultSet) questionSetSelect.value = defaultSet;
+        });
+
         socket.on('server:joined', (roomCode) => {
             myRoomCode = roomCode;
             playerNameDisplay.textContent = nameInput.value;
+            // show waiting UI; questions will only appear after host starts one
             playerWaitingView.classList.remove('hidden');
             playerQuestionView.classList.add('hidden');
             showScreen('player-view');
@@ -198,6 +234,8 @@
             if (playerView.classList.contains('active')) {
                 questionText.textContent = payload.question;
                 answerDisplay.textContent = '';
+                // enable submit only when question is live
+                submitButton.disabled = false;
                 playerWaitingView.classList.add('hidden');
                 playerQuestionView.classList.remove('hidden');
 
@@ -211,6 +249,7 @@
                     if (timeLeft <= 0) {
                         clearInterval(timerInterval);
                         // No need to submit, server handles timeout
+                        submitButton.disabled = true;
                     }
                 }, 1000);
             }
