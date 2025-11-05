@@ -6,9 +6,18 @@ const { Server } = require("socket.io");
 const io = new Server(server);
 const fs = require('fs'); // We need this to read our content file
 
-// --- Game Data ---
-const content = JSON.parse(fs.readFileSync('content-numbers.json', 'utf8'));
-
+// --- Content set discovery + loader ---
+function loadContentFile(filename) {
+    const raw = fs.readFileSync(filename);
+    const str = raw.toString('utf8').replace(/^\uFEFF/, ''); // strip BOM if present
+    return JSON.parse(str);
+}
+const availableSets = fs.readdirSync(__dirname).filter(f => /^content.*\.json$/i.test(f));
+const defaultSet = availableSets[0] || null;
+let defaultContent = null;
+if (defaultSet) {
+    try { defaultContent = loadContentFile(defaultSet); } catch(e) { console.error('Failed to load default content', defaultSet, e); }
+}
 // --- In-Memory Room Storage ---
 const rooms = {};
 
@@ -25,41 +34,56 @@ app.get('/content-numbers.json', (req, res) => {
 // --- Game Logic ---
 io.on('connection', (socket) => {
 
+    // make available sets discoverable to clients (host will use)
+    socket.emit('server:questionSets', availableSets, defaultSet);
+
     // HOST creates a new room
     socket.on('host:create', () => {
         const roomCode = Math.floor(1000 + Math.random() * 9000).toString();
         rooms[roomCode] = {
             hostId: socket.id,
-            players: {}, // We'll store players by their ID
+            players: {},
             gameState: {
                 currentQuestionIndex: -1,
                 isQuestionActive: false,
                 answers: {},
-                timer: null
+                timer: null,
+                content: null // per-room content (null => use defaultContent)
             }
         };
         socket.join(roomCode);
         socket.emit('server:roomCreated', roomCode);
+        // also send available sets just to the host socket (redundant-safe)
+        socket.emit('server:questionSets', availableSets, defaultSet);
         console.log(`Room created: ${roomCode}`);
     });
 
-    // PLAYER joins a room
-    socket.on('player:join', (roomCode, playerName) => {
-        if (!rooms[roomCode]) {
-            return socket.emit('server:error', 'Room does not exist.');
+    // HOST selects which content set to use for this room
+    socket.on('host:selectSet', (roomCode, filename) => {
+        const room = rooms[roomCode];
+        if (!room || room.hostId !== socket.id) return;
+        if (!availableSets.includes(filename)) return;
+        try {
+            room.gameState.content = loadContentFile(filename);
+            socket.emit('server:info', `Selected set ${filename}`);
+            console.log(`Room ${roomCode} selected set ${filename}`);
+        } catch (e) {
+            console.error('Failed to load content file', filename, e);
+            socket.emit('server:error', 'Failed to load selected question set.');
         }
-        socket.join(roomCode);
-        rooms[roomCode].players[socket.id] = { name: playerName, score: 0 };
-        
-        socket.emit('server:joined', roomCode); // Tell player they're in
-        io.to(rooms[roomCode].hostId).emit('server:updatePlayers', Object.values(rooms[roomCode].players)); // Update host player list
-        console.log(`Player ${playerName} joined ${roomCode}`);
     });
 
     // HOST starts the next question
     socket.on('host:nextQuestion', (roomCode) => {
         const room = rooms[roomCode];
         if (!room || room.hostId !== socket.id) return;
+
+        // pick content for room (selected or default)
+        const content = room.gameState.content || defaultContent;
+        if (!content) {
+            socket.emit('server:error', 'No question set available.');
+            return;
+        }
 
         room.gameState.currentQuestionIndex++;
         const questionIndex = room.gameState.currentQuestionIndex;
@@ -73,7 +97,7 @@ io.on('connection', (socket) => {
         room.gameState.answers = {}; // Clear previous answers
         
         const currentQuestion = content.questions[questionIndex];
-        // *** THIS IS THE LINE WE CHANGED ***
+        // Send question + timer to players
         io.to(roomCode).emit('server:newQuestion', { question: currentQuestion.question, timer: content.timer });
 
         // Start the timer
@@ -147,3 +171,4 @@ function endQuestionAndJudge(roomCode) {
 server.listen(3000, () => {
     console.log('listening on *:3000');
 });
+
