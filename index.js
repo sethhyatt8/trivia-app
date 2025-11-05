@@ -73,7 +73,8 @@ io.on('connection', (socket) => {
         room.gameState.answers = {}; // Clear previous answers
         
         const currentQuestion = content.questions[questionIndex];
-        io.to(roomCode).emit('server:newQuestion', currentQuestion.question);
+        // *** THIS IS THE LINE WE CHANGED ***
+        io.to(roomCode).emit('server:newQuestion', { question: currentQuestion.question, timer: content.timer });
 
         // Start the timer
         clearTimeout(room.gameState.timer);
