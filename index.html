@@ -1,45 +1,138 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <title>Socket.IO chat</title>
+<head>
+    <title>Buzzer App</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-      body { margin: 0; padding-bottom: 3rem; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-      #form { background: rgba(0, 0, 0, 0.15); padding: 0.25rem; position: fixed; bottom: 0; left: 0; right: 0; display: flex; height: 3rem; box-sizing: border-box; backdrop-filter: blur(10px); }
-      #input { border: none; padding: 0 1rem; flex-grow: 1; border-radius: 2rem; margin: 0.25rem; }
-      #input:focus { outline: none; }
-      #form > button { background: #333; border: none; padding: 0 1rem; margin: 0.25rem; border-radius: 3px; outline: none; color: #fff; }
-      #messages { list-style-type: none; margin: 0; padding: 0; }
-      #messages > li { padding: 0.5rem 1rem; }
-      #messages > li:nth-child(odd) { background: #efefef; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; text-align: center; background: #222; color: #eee; }
+        .container { max-width: 500px; margin: auto; padding: 20px; }
+        button { font-size: 1.5rem; padding: 15px 30px; border-radius: 8px; border: none; cursor: pointer; }
+        input { font-size: 1.5rem; padding: 15px; border-radius: 8px; border: 2px solid #555; background: #333; color: #eee; }
+        .hidden { display: none; }
+        #buzzer { background: #007bff; color: white; width: 100%; height: 200px; }
+        #buzzer:disabled { background: #555; color: #aaa; }
+        #reset-button { background: #dc3545; color: white; }
+        h1, h2 { color: #00bcd4; }
+        ul { list-style-type: none; padding: 0; }
+        li { background: #444; margin: 5px 0; padding: 10px; border-radius: 5px; }
     </style>
-  </head>
-  <body>
-    <ul id="messages"></ul>
-    <form id="form" action="">
-      <input id="input" autocomplete="off" /><button>Send</button>
-    </form>
+</head>
+<body>
+
+    <div class="container" id="entry-screen">
+        <h1>Buzzer System</h1>
+        <button id="host-button">I am the Host</button>
+        <hr>
+        <input type="text" id="name-input" placeholder="Your Name">
+        <input type="text" id="room-input" placeholder="Room Code">
+        <button id="join-button">Join Room</button>
+    </div>
+
+    <div class="container hidden" id="host-dashboard">
+        <h1>Host Dashboard</h1>
+        <h2>Room Code: <span id="room-code"></span></h2>
+        <button id="reset-button">Reset Buzzer</button>
+        <h3>Players:</h3>
+        <ul id="player-list"></ul>
+        <h3>Buzzes:</h3>
+        <ul id="buzz-list"></ul>
+    </div>
+
+    <div class="container hidden" id="player-view">
+        <h1 id="player-name"></h1>
+        <button id="buzzer">BUZZ!</button>
+    </div>
+
     <script src="/socket.io/socket.io.js"></script>
     <script>
-      const socket = io();
+        const socket = io();
 
-      const form = document.getElementById('form');
-      const input = document.getElementById('input');
-      const messages = document.getElementById('messages');
+        // Screen elements
+        const entryScreen = document.getElementById('entry-screen');
+        const hostDashboard = document.getElementById('host-dashboard');
+        const playerView = document.getElementById('player-view');
+        
+        // Buttons and inputs
+        const hostButton = document.getElementById('host-button');
+        const joinButton = document.getElementById('join-button');
+        const nameInput = document.getElementById('name-input');
+        const roomInput = document.getElementById('room-input');
+        const buzzer = document.getElementById('buzzer');
+        const resetButton = document.getElementById('reset-button');
+        
+        // Display areas
+        const roomCodeDisplay = document.getElementById('room-code');
+        const playerList = document.getElementById('player-list');
+        const buzzList = document.getElementById('buzz-list');
+        const playerNameDisplay = document.getElementById('player-name');
 
-      form.addEventListener('submit', function(e) {
-        e.preventDefault();
-        if (input.value) {
-          socket.emit('chat message', input.value);
-          input.value = '';
-        }
-      });
+        let myRoomCode = '';
+        let myName = '';
+        
+        // Event Listeners
+        hostButton.addEventListener('click', () => {
+            socket.emit('host:create');
+        });
 
-      socket.on('chat message', function(msg) {
-        const item = document.createElement('li');
-        item.textContent = msg;
-        messages.appendChild(item);
-        window.scrollTo(0, document.body.scrollHeight);
-      });
+        joinButton.addEventListener('click', () => {
+            myName = nameInput.value;
+            const roomCode = roomInput.value;
+            if (myName && roomCode) {
+                socket.emit('player:join', roomCode, myName);
+            }
+        });
+
+        buzzer.addEventListener('click', () => {
+            buzzer.disabled = true;
+            socket.emit('player:buzz', myRoomCode, myName);
+        });
+
+        resetButton.addEventListener('click', () => {
+            socket.emit('host:reset', myRoomCode);
+        });
+
+        // Socket.IO Listeners
+        socket.on('server:roomCreated', (roomCode) => {
+            myRoomCode = roomCode;
+            entryScreen.classList.add('hidden');
+            hostDashboard.classList.remove('hidden');
+            roomCodeDisplay.textContent = roomCode;
+        });
+
+        socket.on('server:joined', (roomCode) => {
+            myRoomCode = roomCode;
+            entryScreen.classList.add('hidden');
+            playerView.classList.remove('hidden');
+            playerNameDisplay.textContent = myName;
+        });
+        
+        socket.on('server:playerJoined', (players) => {
+            playerList.innerHTML = '';
+            players.forEach(player => {
+                const li = document.createElement('li');
+                li.textContent = player.name;
+                playerList.appendChild(li);
+            });
+        });
+
+        socket.on('server:buzz', (buzz) => {
+            const li = document.createElement('li');
+            li.textContent = `${buzz.name} at ${new Date(buzz.time).toLocaleTimeString()}`;
+            buzzList.appendChild(li);
+        });
+
+        socket.on('server:reset', () => {
+            buzzer.disabled = false;
+            // Host also needs to clear their list
+            if (hostDashboard.offsetParent !== null) {
+                buzzList.innerHTML = '';
+            }
+        });
+        
+        socket.on('server:error', (message) => {
+            alert(message);
+        });
+
     </script>
-  </body>
+</body>
 </html>
