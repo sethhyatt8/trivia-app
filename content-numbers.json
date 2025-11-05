@@ -1,0 +1,19 @@
+{
+  "title": "Freeform Number Challenge",
+  "gameMode": "freeform-number",
+  "timer": 15,
+  "questions": [
+    {
+      "question": "What is the record for tallest person in inches?",
+      "answer": 107
+    },
+    {
+      "question": "How many days are in a leap year?",
+      "answer": 366
+    },
+    {
+      "question": "What is the boiling point of water in Fahrenheit?",
+      "answer": 212
+    }
+  ]
+}
