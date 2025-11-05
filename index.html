@@ -1,138 +1,232 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Buzzer App</title>
+    <title>Freeform Number Game</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; text-align: center; background: #222; color: #eee; }
-        .container { max-width: 500px; margin: auto; padding: 20px; }
-        button { font-size: 1.5rem; padding: 15px 30px; border-radius: 8px; border: none; cursor: pointer; }
-        input { font-size: 1.5rem; padding: 15px; border-radius: 8px; border: 2px solid #555; background: #333; color: #eee; }
-        .hidden { display: none; }
-        #buzzer { background: #007bff; color: white; width: 100%; height: 200px; }
-        #buzzer:disabled { background: #555; color: #aaa; }
-        #reset-button { background: #dc3545; color: white; }
-        h1, h2 { color: #00bcd4; }
-        ul { list-style-type: none; padding: 0; }
-        li { background: #444; margin: 5px 0; padding: 10px; border-radius: 5px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; text-align: center; background: #1a1a1a; color: #f0f0f0; margin: 0; padding: 10px; }
+        .screen { display: none; }
+        .screen.active { display: block; }
+        .container { max-width: 600px; margin: auto; padding: 20px; background: #2a2a2a; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        button { font-size: 1.2rem; padding: 12px 24px; border-radius: 8px; border: none; cursor: pointer; background: #007bff; color: white; margin: 5px; transition: background-color 0.2s; }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        input { font-size: 1.2rem; padding: 12px; border-radius: 8px; border: 2px solid #555; background: #333; color: #eee; text-align: center; }
+        h1, h2, h3 { color: #00bcd4; }
+        #question-text { font-size: 1.5rem; margin-bottom: 20px; }
+        #timer-display { font-size: 2rem; color: #ffc107; margin-bottom: 20px; }
+        .numpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; max-width: 300px; margin: 20px auto; }
+        .numpad button { height: 60px; font-size: 1.5rem; background: #444; }
+        #answer-display { min-height: 40px; background: #111; padding: 10px; border-radius: 8px; font-size: 2rem; margin-bottom: 20px; }
+        table { width: 100%; margin-top: 20px; border-collapse: collapse; }
+        th, td { padding: 12px; border-bottom: 1px solid #444; }
+        th { background: #333; }
     </style>
 </head>
 <body>
 
-    <div class="container" id="entry-screen">
-        <h1>Buzzer System</h1>
-        <button id="host-button">I am the Host</button>
-        <hr>
-        <input type="text" id="name-input" placeholder="Your Name">
-        <input type="text" id="room-input" placeholder="Room Code">
-        <button id="join-button">Join Room</button>
+    <!-- Screen 1: Entry -->
+    <div id="entry-screen" class="screen active">
+        <div class="container">
+            <h1>Freeform Number Game</h1>
+            <button id="host-button">Create Game</button>
+            <hr>
+            <input type="text" id="name-input" placeholder="Your Name" maxlength="15"><br><br>
+            <input type="text" id="room-input" placeholder="Room Code" pattern="[0-9]*"><br><br>
+            <button id="join-button">Join Game</button>
+        </div>
     </div>
 
-    <div class="container hidden" id="host-dashboard">
-        <h1>Host Dashboard</h1>
-        <h2>Room Code: <span id="room-code"></span></h2>
-        <button id="reset-button">Reset Buzzer</button>
-        <h3>Players:</h3>
-        <ul id="player-list"></ul>
-        <h3>Buzzes:</h3>
-        <ul id="buzz-list"></ul>
+    <!-- Screen 2: Host Dashboard -->
+    <div id="host-dashboard" class="screen">
+        <div class="container">
+            <h1>Host Dashboard</h1>
+            <h2>Room Code: <span id="room-code"></span></h2>
+            <button id="next-question-button">Start Next Question</button>
+            
+            <div id="host-results-view">
+                <h3>Results</h3>
+                <h4>Correct Answer: <span id="correct-answer"></span></h4>
+                <table id="answers-table"><thead><tr><th>Player</th><th>Answer</th></tr></thead><tbody></tbody></table>
+            </div>
+
+            <h3>Scores</h3>
+            <table id="scores-table"><thead><tr><th>Player</th><th>Score</th></tr></thead><tbody></tbody></table>
+        </div>
     </div>
 
-    <div class="container hidden" id="player-view">
-        <h1 id="player-name"></h1>
-        <button id="buzzer">BUZZ!</button>
+    <!-- Screen 3: Player View -->
+    <div id="player-view" class="screen">
+        <div class="container">
+            <h2 id="player-name-display"></h2>
+            <div id="player-question-view" class="hidden">
+                <div id="timer-display"></div>
+                <p id="question-text"></p>
+                <div id="answer-display"></div>
+                <div class="numpad">
+                    <button>1</button><button>2</button><button>3</button>
+                    <button>4</button><button>5</button><button>6</button>
+                    <button>7</button><button>8</button><button>9</button>
+                    <button id="numpad-clear">C</button><button>0</button><button id="numpad-submit">Go</button>
+                </div>
+            </div>
+            <div id="player-waiting-view">
+                <h2>Waiting for the next question...</h2>
+            </div>
+        </div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
 
-        // Screen elements
+        // --- State Variables ---
+        let myRoomCode = '';
+        let timerInterval;
+
+        // --- Screen Elements ---
+        const screens = document.querySelectorAll('.screen');
         const entryScreen = document.getElementById('entry-screen');
         const hostDashboard = document.getElementById('host-dashboard');
         const playerView = document.getElementById('player-view');
         
-        // Buttons and inputs
+        // --- Host Elements ---
         const hostButton = document.getElementById('host-button');
+        const roomCodeDisplay = document.getElementById('room-code');
+        const nextQuestionButton = document.getElementById('next-question-button');
+        const hostResultsView = document.getElementById('host-results-view');
+        const correctAnswerDisplay = document.getElementById('correct-answer');
+        const answersTableBody = document.querySelector('#answers-table tbody');
+        const scoresTableBody = document.querySelector('#scores-table tbody');
+
+        // --- Player Elements ---
         const joinButton = document.getElementById('join-button');
         const nameInput = document.getElementById('name-input');
         const roomInput = document.getElementById('room-input');
-        const buzzer = document.getElementById('buzzer');
-        const resetButton = document.getElementById('reset-button');
+        const playerNameDisplay = document.getElementById('player-name-display');
+        const playerQuestionView = document.getElementById('player-question-view');
+        const playerWaitingView = document.getElementById('player-waiting-view');
+        const timerDisplay = document.getElementById('timer-display');
+        const questionText = document.getElementById('question-text');
+        const answerDisplay = document.getElementById('answer-display');
+        const numpadButtons = document.querySelectorAll('.numpad button');
         
-        // Display areas
-        const roomCodeDisplay = document.getElementById('room-code');
-        const playerList = document.getElementById('player-list');
-        const buzzList = document.getElementById('buzz-list');
-        const playerNameDisplay = document.getElementById('player-name');
+        // --- Utility Functions ---
+        function showScreen(screenId) {
+            screens.forEach(s => s.classList.remove('active'));
+            document.getElementById(screenId).classList.add('active');
+        }
 
-        let myRoomCode = '';
-        let myName = '';
-        
-        // Event Listeners
-        hostButton.addEventListener('click', () => {
-            socket.emit('host:create');
-        });
-
+        // --- Event Listeners ---
+        hostButton.addEventListener('click', () => socket.emit('host:create'));
         joinButton.addEventListener('click', () => {
-            myName = nameInput.value;
-            const roomCode = roomInput.value;
-            if (myName && roomCode) {
-                socket.emit('player:join', roomCode, myName);
+            if (nameInput.value && roomInput.value) {
+                socket.emit('player:join', roomInput.value, nameInput.value);
             }
         });
-
-        buzzer.addEventListener('click', () => {
-            buzzer.disabled = true;
-            socket.emit('player:buzz', myRoomCode, myName);
+        nextQuestionButton.addEventListener('click', () => {
+             hostResultsView.style.display = 'none'; // Hide old results
+            socket.emit('host:nextQuestion', myRoomCode);
         });
 
-        resetButton.addEventListener('click', () => {
-            socket.emit('host:reset', myRoomCode);
+        numpadButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const action = button.id;
+                const value = button.textContent;
+
+                if (action === 'numpad-clear') {
+                    answerDisplay.textContent = '';
+                } else if (action === 'numpad-submit') {
+                    if (answerDisplay.textContent) {
+                        playerQuestionView.classList.add('hidden');
+                        playerWaitingView.classList.remove('hidden');
+                        socket.emit('player:submitAnswer', myRoomCode, answerDisplay.textContent);
+                    }
+                } else {
+                    answerDisplay.textContent += value;
+                }
+            });
         });
 
-        // Socket.IO Listeners
+        // --- Socket Event Handlers ---
         socket.on('server:roomCreated', (roomCode) => {
             myRoomCode = roomCode;
-            entryScreen.classList.add('hidden');
-            hostDashboard.classList.remove('hidden');
             roomCodeDisplay.textContent = roomCode;
+            hostResultsView.style.display = 'none';
+            showScreen('host-dashboard');
         });
 
         socket.on('server:joined', (roomCode) => {
             myRoomCode = roomCode;
-            entryScreen.classList.add('hidden');
-            playerView.classList.remove('hidden');
-            playerNameDisplay.textContent = myName;
+            playerNameDisplay.textContent = nameInput.value;
+            playerWaitingView.classList.remove('hidden');
+            playerQuestionView.classList.add('hidden');
+            showScreen('player-view');
         });
         
-        socket.on('server:playerJoined', (players) => {
-            playerList.innerHTML = '';
-            players.forEach(player => {
-                const li = document.createElement('li');
-                li.textContent = player.name;
-                playerList.appendChild(li);
+        socket.on('server:updatePlayers', (players) => {
+            scoresTableBody.innerHTML = '';
+            players.forEach(p => {
+                const row = scoresTableBody.insertRow();
+                row.insertCell(0).textContent = p.name;
+                row.insertCell(1).textContent = p.score;
             });
         });
+        
+        socket.on('server:newQuestion', (question) => {
+            // This is for everyone (host and players)
+            nextQuestionButton.disabled = true;
 
-        socket.on('server:buzz', (buzz) => {
-            const li = document.createElement('li');
-            li.textContent = `${buzz.name} at ${new Date(buzz.time).toLocaleTimeString()}`;
-            buzzList.appendChild(li);
-        });
+            // Player specific actions
+            if (playerView.classList.contains('active')) {
+                questionText.textContent = question;
+                answerDisplay.textContent = '';
+                playerWaitingView.classList.add('hidden');
+                playerQuestionView.classList.remove('hidden');
 
-        socket.on('server:reset', () => {
-            buzzer.disabled = false;
-            // Host also needs to clear their list
-            if (hostDashboard.offsetParent !== null) {
-                buzzList.innerHTML = '';
+                // Timer logic
+                let timeLeft = 15; // Hardcoded for now, should match JSON
+                timerDisplay.textContent = timeLeft;
+                clearInterval(timerInterval);
+                timerInterval = setInterval(() => {
+                    timeLeft--;
+                    timerDisplay.textContent = timeLeft;
+                    if (timeLeft <= 0) {
+                        clearInterval(timerInterval);
+                        // No need to submit, server handles timeout
+                    }
+                }, 1000);
             }
         });
-        
-        socket.on('server:error', (message) => {
-            alert(message);
+
+        socket.on('server:showResults', (results) => {
+            correctAnswerDisplay.textContent = results.correctAnswer;
+
+            // Update answers table
+            answersTableBody.innerHTML = '';
+            results.playerAnswers.forEach(p => {
+                const row = answersTableBody.insertRow();
+                row.insertCell(0).textContent = p.name;
+                row.insertCell(1).textContent = p.answer;
+            });
+
+            // Update scores table
+            scoresTableBody.innerHTML = '';
+            results.scores.forEach(p => {
+                const row = scoresTableBody.insertRow();
+                row.insertCell(0).textContent = p.name;
+                row.insertCell(1).textContent = p.score;
+            });
+
+            hostResultsView.style.display = 'block';
+            nextQuestionButton.disabled = false;
         });
 
+        socket.on('server:gameOver', () => {
+            alert('The game is over!');
+        });
+
+        socket.on('server:error', (message) => alert(message));
     </script>
 </body>
 </html>
