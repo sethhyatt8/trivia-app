@@ -21,6 +21,9 @@
         table { width: 100%; margin-top: 20px; border-collapse: collapse; }
         th, td { padding: 12px; border-bottom: 1px solid #444; }
         th { background: #333; }
+        /* Submit button styling to visually separate it from the numpad */
+        #submit-button { width: 100%; font-size: 1.1rem; padding: 12px; border-radius: 8px; margin-top: 10px; background: #28a745; }
+        #submit-button:hover { background: #1e7e34; }
     </style>
 </head>
 <body>
@@ -67,7 +70,12 @@
                     <button>1</button><button>2</button><button>3</button>
                     <button>4</button><button>5</button><button>6</button>
                     <button>7</button><button>8</button><button>9</button>
-                    <button id="numpad-clear">C</button><button>0</button><button id="numpad-submit">Go</button>
+                    <button id="numpad-clear">C</button><button>0</button>
+                </div>
+
+                <!-- Separate Submit button -->
+                <div style="max-width:300px;margin:0 auto;">
+                    <button id="submit-button">Submit</button>
                 </div>
             </div>
             <div id="player-waiting-view">
@@ -110,6 +118,7 @@
         const questionText = document.getElementById('question-text');
         const answerDisplay = document.getElementById('answer-display');
         const numpadButtons = document.querySelectorAll('.numpad button');
+        const submitButton = document.getElementById('submit-button');
         
         // --- Utility Functions ---
         function showScreen(screenId) {
@@ -129,23 +138,30 @@
             socket.emit('host:nextQuestion', myRoomCode);
         });
 
+        // Numpad buttons: append digits or clear
         numpadButtons.forEach(button => {
             button.addEventListener('click', () => {
-                const action = button.id;
-                const value = button.textContent;
+                const id = button.id;
+                const value = button.textContent.trim();
 
-                if (action === 'numpad-clear') {
+                if (id === 'numpad-clear') {
                     answerDisplay.textContent = '';
-                } else if (action === 'numpad-submit') {
-                    if (answerDisplay.textContent) {
-                        playerQuestionView.classList.add('hidden');
-                        playerWaitingView.classList.remove('hidden');
-                        socket.emit('player:submitAnswer', myRoomCode, answerDisplay.textContent);
-                    }
-                } else {
+                    return;
+                }
+                // Append numeric keys only
+                if (!isNaN(parseInt(value, 10))) {
                     answerDisplay.textContent += value;
                 }
             });
+        });
+
+        // Separate submit button
+        submitButton.addEventListener('click', () => {
+            if (answerDisplay.textContent) {
+                playerQuestionView.classList.add('hidden');
+                playerWaitingView.classList.remove('hidden');
+                socket.emit('player:submitAnswer', myRoomCode, answerDisplay.textContent);
+            }
         });
 
         // --- Socket Event Handlers ---
@@ -173,19 +189,20 @@
             });
         });
         
-        socket.on('server:newQuestion', (question) => {
+        // Accept payload { question, timer } from host
+        socket.on('server:newQuestion', (payload) => {
             // This is for everyone (host and players)
             nextQuestionButton.disabled = true;
 
             // Player specific actions
             if (playerView.classList.contains('active')) {
-                questionText.textContent = question;
+                questionText.textContent = payload.question;
                 answerDisplay.textContent = '';
                 playerWaitingView.classList.add('hidden');
                 playerQuestionView.classList.remove('hidden');
 
                 // Timer logic
-                let timeLeft = 15; // Hardcoded for now, should match JSON
+                let timeLeft = payload.timer || 15;
                 timerDisplay.textContent = timeLeft;
                 clearInterval(timerInterval);
                 timerInterval = setInterval(() => {
